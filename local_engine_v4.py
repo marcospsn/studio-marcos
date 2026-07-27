@@ -57,6 +57,7 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
         raise ValueError("Foto Principal nao encontrada ou invalida.")
         
     modified_img = img_main.copy()
+    final_result = img_main.copy()  # fallback seguro para qualquer caminho
     
     if ref_img_path and os.path.exists(ref_img_path):
         logs.append(f"🖼️ Foto de referência selecionada: {os.path.basename(ref_img_path)}.")
@@ -142,9 +143,20 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
                 else:
                     final_result = img_main.copy()
 
+            else:
+                # Mascara com referencia (face swap): mescla cirurgica simples
+                logs.append("✂️ Máscara + Referência: aplicando mesclagem cirúrgica na área selecionada.")
+                final_result = apply_face_mask(img_main, modified_img, user_mask)
+
         else:
             final_result = modified_img
-    # Sem mascara: se também não teve referência, aplica GFPGAN para restaurar skin grain e foco
+
+    # Sempre atualiza final_result com modified_img antes do upscale (cobre: ref sem mascara, etc.)
+    # So é sobrescrito se a mascara ja definiu um resultado mais especifico acima
+    if not (mask_img_path and os.path.exists(mask_img_path)):
+        final_result = modified_img
+
+    # Sem mascara e sem referencia: aplica GFPGAN para restaurar skin grain e foco
     if not (mask_img_path and os.path.exists(mask_img_path)) and (not ref_img_path or not os.path.exists(ref_img_path)):
         logs.append("✨ Modo Restauração Automática: aprimorando skin grain, poros e definição via GFPGAN...")
         try:
