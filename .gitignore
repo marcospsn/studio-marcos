@@ -13,13 +13,34 @@ __pycache__/
 *.pth
 *.pt
 *.ckpt
+*.bin
+
+# Segredos e credenciais
+.env
+*.env
+secrets.json
 
 # Imagens geradas temporárias
 static/generations/*
 !static/generations/.gitkeep
-temp_main_input.jpg
-temp_mask_input.png
-temp_out_*.jpg
+temp_*.jpg
+temp_*.png
+temp_*.mp4
+
+# Arquivos grandes
+*.zip
+*.tar
+*.tar.gz
+marcos_dataset*/
+dataset_prepared/
+lora_config.json
+
+# Scripts de teste e treinamento locais
+test_*.py
+train_*.py
+Treinar_*.py
+Teste_*.py
+create_dataset*.py
 
 # Logs e arquivos de sistema
 *.log
