@@ -86,42 +86,39 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
             logs.append("🖌️ Máscara pintada detectada! Analisando área selecionada...")
 
             if not ref_img_path or not os.path.exists(ref_img_path):
-                logs.append("🧹 Modo Limpeza de Pele (Kimi AI): decomposição Base+Detalhe para preservar 100% dos poros...")
+                logs.append("🧹 Modo Limpeza de Pele (Kimi AI v2): inpaint Base+Detalhe em 3 canais, bordas suaves...")
 
-                # Mascara binaria na escala correta
+                # Mascara binaria corretamente redimensionada
                 mask_binary = (user_mask > 50).astype(np.uint8) * 255
                 if mask_binary.shape[:2] != img_main.shape[:2]:
                     mask_binary = cv2.resize(mask_binary, (img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-                # Decomposicao Base + Detalhe no espaco Lab (Kimi AI)
-                img_float = img_main.astype(np.float32) / 255.0
-                lab = cv2.cvtColor(img_float, cv2.COLOR_BGR2Lab)
-                L, a_ch, b_ch = cv2.split(lab)
+                # Dilatar a mascara para puxar pixels saudaveis nas bordas (Kimi AI)
+                mask_area = np.sum(mask_binary > 0)
+                mask_radius = int(np.sqrt(mask_area / np.pi)) if mask_area > 0 else 10
+                inpaint_radius = min(max(int(mask_radius * 0.05), 5), 20)
+                kernel_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+                mask_dilated = cv2.dilate(mask_binary, kernel_dil, iterations=1)
 
-                # Base (baixa frequencia = cor/luminosidade onde estao as sardas)
-                L_norm = L / 100.0
-                base_L = cv2.bilateralFilter(L_norm.astype(np.float32), d=9, sigmaColor=0.05, sigmaSpace=9)
-                # Detalhe (alta frequencia = POROS e TEXTURA - preservado intacto)
-                detail_L = L_norm - base_L
+                # Decomposicao Base + Detalhe (Kimi AI)
+                base = cv2.bilateralFilter(img_main, d=9, sigmaColor=75, sigmaSpace=75)
+                # Detalhe = textura original intacta (poros, pelos, micro-relevo)
+                detail = cv2.addWeighted(img_main, 1.0, base, -1.0, 128)
 
-                # Inpaint SOMENTE na base usando pixels vizinhos saudaveis
-                base_L_uint8 = np.clip(base_L * 255, 0, 255).astype(np.uint8)
-                base_inpainted = cv2.inpaint(base_L_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) / 255.0
+                # Inpaint na BASE completa em espaco Lab (todos os 3 canais - Kimi AI)
+                base_lab = cv2.cvtColor(base, cv2.COLOR_BGR2LAB)
+                base_lab_inpainted = base_lab.copy()
+                for c in range(3):
+                    base_lab_inpainted[:, :, c] = cv2.inpaint(
+                        base_lab[:, :, c], mask_dilated, inpaint_radius, cv2.INPAINT_TELEA
+                    )
+                base_inpainted = cv2.cvtColor(base_lab_inpainted, cv2.COLOR_LAB2BGR)
 
-                # Inpaint canais de cor a,b para corrigir o tom marrom/vermelho das sardas
-                a_uint8 = np.clip(a_ch + 128, 0, 255).astype(np.uint8)
-                b_uint8 = np.clip(b_ch + 128, 0, 255).astype(np.uint8)
-                a_inpainted = cv2.inpaint(a_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) - 128
-                b_inpainted = cv2.inpaint(b_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) - 128
-
-                # Recombinar: nova base (sem sardas) + detalhe ORIGINAL (poros intactos)
-                new_L_norm = np.clip(base_inpainted + detail_L, 0, 1)
-                new_L = (new_L_norm * 100.0).astype(np.float32)
-
-                new_lab = cv2.merge([new_L, a_inpainted, b_inpainted])
-                result_float = cv2.cvtColor(new_lab, cv2.COLOR_Lab2BGR)
-                modified_img = np.clip(result_float * 255, 0, 255).astype(np.uint8)
-                logs.append("✨ Textura de pele e poros preservados 100%. Sardas removidas somente na camada de cor/luminosidade.")
+                # Recompor: base inpaintada + detalhe ORIGINAL (poros intactos)
+                modified_img = np.clip(
+                    base_inpainted.astype(np.float32) + detail.astype(np.float32) - 128, 0, 255
+                ).astype(np.uint8)
+                logs.append(f"✨ Sardas removidas (inpaintRadius={inpaint_radius}). Poros e textura 100% preservados.")
 
 
             logs.append("✂️ Aplicando mesclagem cirúrgica: 100% dos pixels fora da máscara mantidos idênticos.")
