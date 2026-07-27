@@ -1,0 +1,70 @@
+{
+  "project": "Studio Marcos - Zero-Shot Reference Inpainting",
+  "version": "2.0.0",
+  "description": "Mapeamento das fotos reais do Marcos para inpainting multimodal por referência direta (sem treinamento de LoRA)",
+  "references": [
+    {
+      "id": "marcos_01_frontal_sorriso",
+      "file_name": "Marcos 01 leve sorriso.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 01 leve sorriso.png",
+      "pose": "frontal",
+      "expression": "leve sorriso",
+      "lighting": "luz natural de estudio",
+      "best_for": ["retratos frontais", "alteracao de roupa", "mudanca de cenario frontal"]
+    },
+    {
+      "id": "marcos_02_olhando_camera",
+      "file_name": "Marcos 02 olhando pra camera.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 02 olhando pra camera.png",
+      "pose": "frontal proximo",
+      "expression": "neutro atento",
+      "lighting": "luz suave",
+      "best_for": ["close-up", "detalhes de pele reais", "edicao de rosto"]
+    },
+    {
+      "id": "marcos_03_pensativo",
+      "file_name": "Marcos 03 pensativo.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 03 pensativo.png",
+      "pose": "perfil 3/4",
+      "expression": "pensativo serio",
+      "lighting": "luz dramatica de lado",
+      "best_for": ["poses corporais de lado", "cenarios externos", "estilo executivo"]
+    },
+    {
+      "id": "marcos_04_serio",
+      "file_name": "Marcos 04 sério.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 04 sério.png",
+      "pose": "frontal corpo inteiro",
+      "expression": "serio confiante",
+      "lighting": "luz uniforme",
+      "best_for": ["troca de roupa", "troca de fundo", "postura corporativa"]
+    },
+    {
+      "id": "marcos_05_sorrindo",
+      "file_name": "Marcos 05 sorrindo.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 05 sorrindo.png",
+      "pose": "ligeira inclinacao",
+      "expression": "sorriso aberto",
+      "lighting": "luz ambiente clara",
+      "best_for": ["fotos casuais", "ambientes abertos", "estilo descontraido"]
+    },
+    {
+      "id": "marcos_06_olhando_ceu",
+      "file_name": "Marcos 06 Sério olhando pro céu.png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 06 Sério olhando pro céu.png",
+      "pose": "inclinado para cima",
+      "expression": "serio focado",
+      "lighting": "luz solar exterior",
+      "best_for": ["cenarios ao ar livre", "perspectiva de baixo para cima"]
+    },
+    {
+      "id": "marcos_07_foto_3x4",
+      "file_name": "Marcos 07 foto 3x4 leve sorriso(1).png",
+      "path": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 07 foto 3x4 leve sorriso(1).png",
+      "pose": "padrao 3x4",
+      "expression": "sorriso formal",
+      "lighting": "luz neutra",
+      "best_for": ["fotos formais", "perfil profissional", "documentos"]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
+# Python / Cache e compilados
+__pycache__/
+*.py[cod]
+*.so
+
+# Modelos pesados (.onnx, .pth, .bin)
+*.onnx
+*.pth
+*.pt
+*.ckpt
+
+# Imagens geradas temporárias
+static/generations/*
+!static/generations/.gitkeep
+temp_main_input.jpg
+temp_mask_input.png
+temp_out_*.jpg
+
+# Logs e arquivos de sistema
+*.log
+.DS_Store
+.vscode/
+.idea/
