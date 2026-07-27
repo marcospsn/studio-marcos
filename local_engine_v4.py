@@ -26,20 +26,26 @@ restorer = GFPGANer(model_path='https://github.com/TencentARC/GFPGAN/releases/do
 
 def apply_face_mask(original, modified, mask):
     """
-    Substitui apenas os pixels da face (onde mask == 255) pela imagem modificada.
-    Todos os outros pixels permanecem 100% iguais à imagem original (Kimi AI pattern).
+    Mescla as regioes com bordas suaves (feathering) usando alpha blending.
+    Evita o efeito de 'cola derramada' com GaussianBlur no mask.
     """
     if len(mask.shape) == 3:
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        
-    mask = (mask > 50).astype(np.uint8) * 255
 
     if mask.shape[:2] != original.shape[:2]:
-        mask = cv2.resize(mask, (original.shape[1], original.shape[0]), interpolation=cv2.INTER_NEAREST)
+        mask = cv2.resize(mask, (original.shape[1], original.shape[0]), interpolation=cv2.INTER_LINEAR)
 
-    result = original.copy()
-    cv2.copyTo(src=modified, mask=mask, dst=result)
-    return result
+    # Feathering: suaviza as bordas da mascara para evitar cortes abruptos
+    mask_blur = cv2.GaussianBlur(mask.astype(np.float32), (31, 31), 0)
+    mask_norm = mask_blur / 255.0
+    mask_3ch = np.stack([mask_norm] * 3, axis=-1)
+
+    orig_f = original.astype(np.float32)
+    mod_f = modified.astype(np.float32)
+
+    # Interpolacao suave pixel a pixel nas bordas
+    blended = orig_f * (1.0 - mask_3ch) + mod_f * mask_3ch
+    return np.clip(blended, 0, 255).astype(np.uint8)
 
 def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=None):
     logs = []
@@ -79,12 +85,32 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
         if user_mask is not None and np.max(user_mask) > 50:
             logs.append("🖌️ Máscara pintada detectada! Analisando área selecionada...")
             
-            # Se nao houve transplante de rosto, mas há mascara (ex: braços, pelos, corpo), aplica super-nitidez de pelos/pele
+            # Sem referência: inpaint + seamlessClone para remover sardas/manchas com textura natural
             if not ref_img_path or not os.path.exists(ref_img_path):
-                logs.append("💪 Regra Multi-Regional Ativada: Processando pelos, braços e pele na GPU RTX 3050 (sem alterar rosto)...")
-                _, _, enhanced_body = restorer.enhance(img_main, has_aligned=False, only_center_face=False, paste_back=True)
-                if enhanced_body is not None:
-                    modified_img = enhanced_body
+                logs.append("🧹 Modo Limpeza de Pele: removendo sardas/manchas e fundindo textura nas bordas (inpaint + seamless blend)...")
+                # Mascara binaria para o inpaint (pixeis a preencher)
+                mask_binary = (user_mask > 50).astype(np.uint8) * 255
+                if mask_binary.shape[:2] != img_main.shape[:2]:
+                    mask_binary = cv2.resize(mask_binary, (img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
+                # Inpainting: preenche a regiao mascarada usando pixels vizinhos (Telea algorithm)
+                inpainted = cv2.inpaint(img_main, mask_binary, inpaintRadius=7, flags=cv2.INPAINT_TELEA)
+                # Equaliza a textura de pele com bilateral filter na regiao inpaintada
+                inpainted_smooth = cv2.bilateralFilter(inpainted, d=9, sigmaColor=75, sigmaSpace=75)
+                # seamlessClone: funde a regiao suavizada com a imagem original preservando bordas e iluminacao
+                mask_for_clone = mask_binary.copy()
+                # Centro da mascara para o seamlessClone
+                ys, xs = np.where(mask_for_clone > 0)
+                if len(xs) > 0 and len(ys) > 0:
+                    cx = int((xs.min() + xs.max()) / 2)
+                    cy = int((ys.min() + ys.max()) / 2)
+                    try:
+                        modified_img = cv2.seamlessClone(inpainted_smooth, img_main, mask_for_clone, (cx, cy), cv2.NORMAL_CLONE)
+                        logs.append("✨ Textura de pele preservada e sardas removidas com fusão natural nas bordas.")
+                    except Exception:
+                        modified_img = inpainted_smooth
+                        logs.append("✨ Sardas removidas com inpaint (fallback sem seamlessClone).")
+                else:
+                    modified_img = inpainted_smooth
 
             logs.append("✂️ Aplicando mesclagem cirúrgica: 100% dos pixels fora da máscara mantidos idênticos.")
             final_result = apply_face_mask(img_main, modified_img, user_mask)
