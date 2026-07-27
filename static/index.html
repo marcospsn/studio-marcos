@@ -166,11 +166,13 @@
     </div>
 
     <div class="result-container" id="resultContainer">
-      <div class="result-img-wrapper" style="overflow: auto; cursor: grab;" id="zoomWrapper">
-        <img id="resultImage" src="" alt="Resultado" style="transition: transform 0.1s ease; transform-origin: center center;">
+      <div class="result-img-wrapper" style="overflow: auto; position: relative;" id="zoomWrapper">
+        <div id="resultWorld" style="display: inline-block; transform-origin: 0 0;">
+          <img id="resultImage" src="" alt="Resultado" draggable="false">
+        </div>
       </div>
       <div style="position: absolute; bottom: 80px; background: rgba(15, 23, 42, 0.85); color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; border: 1px solid var(--border); z-index: 60;">
-        🔍 Use a roda do mouse (wheel) para Zoom In/Out na imagem
+        🔍 Scroll=↕ &nbsp;|&nbsp; Shift+Scroll=↔ &nbsp;|&nbsp; Ctrl+Scroll=Zoom
       </div>
       <div class="result-actions">
         <button class="btn-primary" onclick="downloadImage()">💾 Baixar Foto 4K</button>
@@ -403,67 +405,58 @@
       }
     }
 
-    // CLASSE PANZOOM DO KIMI AI PARA NAVEGAÇÃO LIVRE NOS 4 LADOS (ZOOM E ARRASTE)
-    class PanZoom {
-      constructor(viewport, world) {
-        this.viewport = viewport;
-        this.world = world;
-        this.x = 0; this.y = 0; this.scale = 1;
-        this.isPanning = false;
-        this.lastMouseX = 0; this.lastMouseY = 0;
-        this.minScale = 0.5; this.maxScale = 6.0;
-        this.zoomSpeed = 0.15;
-        this.bindEvents();
-      }
+    // NAVEGAÇÃO: Scroll=vertical | Shift+Scroll=horizontal | Ctrl+Scroll=Zoom
+    // Aplicado tanto no zoomWrapper (resultado) quanto no canvas-container (foto principal)
+    let resultZoomScale = 1;
+    const resultWorld = document.getElementById('resultWorld');
+    const zoomWrapperEl = document.getElementById('zoomWrapper');
 
-      bindEvents() {
-        this.viewport.addEventListener('wheel', (e) => {
-          e.preventDefault();
-          const rect = this.viewport.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-          const direction = -Math.sign(e.deltaY);
-          const newScale = Math.min(Math.max(this.scale + direction * this.scale * this.zoomSpeed, this.minScale), this.maxScale);
-          const worldX = (mouseX - this.x) / this.scale;
-          const worldY = (mouseY - this.y) / this.scale;
-          this.x = mouseX - worldX * newScale;
-          this.y = mouseY - worldY * newScale;
-          this.scale = newScale;
-          this.applyTransform();
-        }, { passive: false });
+    function applyResultZoom(newScale, mouseX, mouseY) {
+      const rect = zoomWrapperEl.getBoundingClientRect();
+      const scrollLeft = zoomWrapperEl.scrollLeft;
+      const scrollTop = zoomWrapperEl.scrollTop;
+      const originX = (mouseX - rect.left + scrollLeft) / resultZoomScale;
+      const originY = (mouseY - rect.top + scrollTop) / resultZoomScale;
 
-        this.viewport.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          this.isPanning = true;
-          this.lastMouseX = e.clientX;
-          this.lastMouseY = e.clientY;
-          this.viewport.style.cursor = 'grabbing';
-        });
-
-        window.addEventListener('mousemove', (e) => {
-          if (!this.isPanning) return;
-          this.x += e.clientX - this.lastMouseX;
-          this.y += e.clientY - this.lastMouseY;
-          this.lastMouseX = e.clientX;
-          this.lastMouseY = e.clientY;
-          this.applyTransform();
-        });
-
-        window.addEventListener('mouseup', () => {
-          this.isPanning = false;
-          this.viewport.style.cursor = 'grab';
-        });
-      }
-
-      applyTransform() {
-        this.world.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.scale})`;
-      }
-
-      reset() {
-        this.x = 0; this.y = 0; this.scale = 1;
-        this.applyTransform();
-      }
+      resultZoomScale = Math.min(Math.max(newScale, 0.5), 6.0);
+      resultWorld.style.transform = `scale(${resultZoomScale})`;
+      resultWorld.style.transformOrigin = `${originX}px ${originY}px`;
     }
+
+    if (zoomWrapperEl) {
+      zoomWrapperEl.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -0.1 : 0.1;
+          applyResultZoom(resultZoomScale + delta * resultZoomScale, e.clientX, e.clientY);
+        } else if (e.shiftKey) {
+          e.preventDefault();
+          zoomWrapperEl.scrollLeft += e.deltaY;
+        }
+        // Scroll simples: comportamento nativo do overflow:auto (vertical)
+      }, { passive: false });
+    }
+
+    // Zoom no canvas principal (foto carregada)
+    const canvasContainer = canvas.parentElement;
+    let canvasZoomScale = 1;
+
+    canvasContainer.style.overflow = 'auto';
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.display = 'block';
+
+    canvasContainer.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        canvasZoomScale = Math.min(Math.max(canvasZoomScale + delta * canvasZoomScale, 0.5), 6.0);
+        canvas.style.transform = `scale(${canvasZoomScale})`;
+      } else if (e.shiftKey) {
+        e.preventDefault();
+        canvasContainer.scrollLeft += e.deltaY;
+      }
+      // Scroll simples: comportamento nativo do overflow:auto (vertical)
+    }, { passive: false });
 
     let pzInstance = null;
 
