@@ -391,11 +391,8 @@
         if (data.status === 'success' && data.image_url) {
           document.getElementById('resultImage').src = data.image_url;
           document.getElementById('resultContainer').style.display = 'flex';
-          if (!pzInstance) {
-            pzInstance = new PanZoom(document.getElementById('zoomWrapper'), document.getElementById('resultImage'));
-          } else {
-            pzInstance.reset();
-          }
+          resultZoomScale = 1;
+          resultWorld.style.transform = 'scale(1)';
         } else {
           alert('Erro ao processar: ' + (data.message || 'Erro desconhecido'));
         }
@@ -458,10 +455,10 @@
       // Scroll simples: comportamento nativo do overflow:auto (vertical)
     }, { passive: false });
 
-    let pzInstance = null;
 
     function closeResultView() {
-      if (pzInstance) pzInstance.reset();
+      resultZoomScale = 1;
+      if (resultWorld) resultWorld.style.transform = 'scale(1)';
       document.getElementById('resultContainer').style.display = 'none';
     }
 
