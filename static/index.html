@@ -389,6 +389,11 @@
         if (data.status === 'success' && data.image_url) {
           document.getElementById('resultImage').src = data.image_url;
           document.getElementById('resultContainer').style.display = 'flex';
+          if (!pzInstance) {
+            pzInstance = new PanZoom(document.getElementById('zoomWrapper'), document.getElementById('resultImage'));
+          } else {
+            pzInstance.reset();
+          }
         } else {
           alert('Erro ao processar: ' + (data.message || 'Erro desconhecido'));
         }
@@ -398,25 +403,72 @@
       }
     }
 
-    let currentZoom = 1;
-    const zoomImg = document.getElementById('resultImage');
-    const zoomWrap = document.getElementById('zoomWrapper');
+    // CLASSE PANZOOM DO KIMI AI PARA NAVEGAÇÃO LIVRE NOS 4 LADOS (ZOOM E ARRASTE)
+    class PanZoom {
+      constructor(viewport, world) {
+        this.viewport = viewport;
+        this.world = world;
+        this.x = 0; this.y = 0; this.scale = 1;
+        this.isPanning = false;
+        this.lastMouseX = 0; this.lastMouseY = 0;
+        this.minScale = 0.5; this.maxScale = 6.0;
+        this.zoomSpeed = 0.15;
+        this.bindEvents();
+      }
 
-    if (zoomWrap) {
-      zoomWrap.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (e.deltaY < 0) {
-          currentZoom = Math.min(currentZoom + 0.25, 4.0);
-        } else {
-          currentZoom = Math.max(currentZoom - 0.25, 0.5);
-        }
-        zoomImg.style.transform = `scale(${currentZoom})`;
-      }, { passive: false });
+      bindEvents() {
+        this.viewport.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const rect = this.viewport.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+          const direction = -Math.sign(e.deltaY);
+          const newScale = Math.min(Math.max(this.scale + direction * this.scale * this.zoomSpeed, this.minScale), this.maxScale);
+          const worldX = (mouseX - this.x) / this.scale;
+          const worldY = (mouseY - this.y) / this.scale;
+          this.x = mouseX - worldX * newScale;
+          this.y = mouseY - worldY * newScale;
+          this.scale = newScale;
+          this.applyTransform();
+        }, { passive: false });
+
+        this.viewport.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          this.isPanning = true;
+          this.lastMouseX = e.clientX;
+          this.lastMouseY = e.clientY;
+          this.viewport.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+          if (!this.isPanning) return;
+          this.x += e.clientX - this.lastMouseX;
+          this.y += e.clientY - this.lastMouseY;
+          this.lastMouseX = e.clientX;
+          this.lastMouseY = e.clientY;
+          this.applyTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+          this.isPanning = false;
+          this.viewport.style.cursor = 'grab';
+        });
+      }
+
+      applyTransform() {
+        this.world.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.scale})`;
+      }
+
+      reset() {
+        this.x = 0; this.y = 0; this.scale = 1;
+        this.applyTransform();
+      }
     }
 
+    let pzInstance = null;
+
     function closeResultView() {
-      currentZoom = 1;
-      zoomImg.style.transform = 'scale(1)';
+      if (pzInstance) pzInstance.reset();
       document.getElementById('resultContainer').style.display = 'none';
     }
 
