@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import insightface
 from insightface.app import FaceAnalysis
+from sd_inpaint import process_inpaint_sd
 
 torch_lib = os.path.join(os.path.dirname(torch.__file__), 'lib')
 if os.path.exists(torch_lib):
@@ -87,45 +88,53 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
             logs.append("🖌️ Máscara pintada detectada! Analisando área selecionada...")
 
             if not ref_img_path or not os.path.exists(ref_img_path):
-                logs.append("🧹 Modo Limpeza de Pele v3: GaussianBase + seamlessClone para emenda invisível...")
+                logs.append("🤖 Modo SD Inpainting v6.0: motor neural para textura de pele realista...")
 
                 # Mascara binaria corretamente redimensionada
                 mask_binary = (user_mask > 50).astype(np.uint8) * 255
                 if mask_binary.shape[:2] != img_main.shape[:2]:
                     mask_binary = cv2.resize(mask_binary, (img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-                # Dilatar a mascara para puxar pixels saudaveis nas bordas
-                mask_area = np.sum(mask_binary > 0)
-                mask_radius = int(np.sqrt(mask_area / np.pi)) if mask_area > 0 else 10
-                inpaint_radius = min(max(int(mask_radius * 0.05), 5), 20)
-                kernel_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-                mask_dilated = cv2.dilate(mask_binary, kernel_dil, iterations=1)
-
-                # BASE: Gaussian puro com sigma grande (captura SO o gradiente de tom de larga escala)
-                # Nenhum pixel de textura/poro entra na base => detail layer fica com 100% do skin grain
                 h_img, w_img = img_main.shape[:2]
-                sigma_base = max(h_img, w_img) * 0.015   # ~1.5% da dimensao maxima
-                base = cv2.GaussianBlur(img_main, (0, 0), sigma_base)
-                # Detalhe = TUDO que nao e gradiente de cor => skin grain, poros, pelos, micro-relevo
-                detail = cv2.addWeighted(img_main, 1.0, base, -1.0, 128)
 
-                # Inpaint na BASE em espaco Lab (todos os 3 canais para corrigir tom e cor da sarda)
-                base_lab = cv2.cvtColor(base, cv2.COLOR_BGR2LAB)
-                base_lab_inpainted = base_lab.copy()
-                for c in range(3):
-                    base_lab_inpainted[:, :, c] = cv2.inpaint(
-                        base_lab[:, :, c], mask_dilated, inpaint_radius, cv2.INPAINT_TELEA
-                    )
-                base_inpainted = cv2.cvtColor(base_lab_inpainted, cv2.COLOR_LAB2BGR)
+                # ===================================================
+                # TENTATIVA 1: Stable Diffusion Inpainting (IA neural)
+                # ===================================================
+                sd_result = process_inpaint_sd(img_main, mask_binary, logs, strength=0.25)
 
-                # Recompor: base inpaintada + detalhe ORIGINAL (skin grain intacto)
-                modified_img = np.clip(
-                    base_inpainted.astype(np.float32) + detail.astype(np.float32) - 128, 0, 255
-                ).astype(np.uint8)
-                logs.append(f"✨ Sardas removidas (radius={inpaint_radius}). Skin grain 100% preservado.")
+                if sd_result is not None:
+                    # SD produziu resultado — aplicar seamlessClone para emenda de tom
+                    modified_img = sd_result
+                    logs.append("🔗 Aplicando seamlessClone para fundir bordas da máscara...")
+                else:
+                    # ===============================================
+                    # FALLBACK: OpenCV GaussianBase + inpaint (2004)
+                    # ===============================================
+                    logs.append("⚙️ Fallback OpenCV: GaussianBase + inpaint TELEA...")
 
-                # SEAMLESS CLONE: adapta o tom do resultado para igualar a pele vizinha
-                # Elimina completamente a emenda visivel de tom diferente
+                    mask_area = np.sum(mask_binary > 0)
+                    mask_radius = int(np.sqrt(mask_area / np.pi)) if mask_area > 0 else 10
+                    inpaint_radius = min(max(int(mask_radius * 0.05), 5), 20)
+                    kernel_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+                    mask_dilated = cv2.dilate(mask_binary, kernel_dil, iterations=1)
+
+                    sigma_base = max(h_img, w_img) * 0.015
+                    base = cv2.GaussianBlur(img_main, (0, 0), sigma_base)
+                    detail = cv2.addWeighted(img_main, 1.0, base, -1.0, 128)
+
+                    base_lab = cv2.cvtColor(base, cv2.COLOR_BGR2LAB)
+                    base_lab_inp = base_lab.copy()
+                    for c in range(3):
+                        base_lab_inp[:, :, c] = cv2.inpaint(
+                            base_lab[:, :, c], mask_dilated, inpaint_radius, cv2.INPAINT_TELEA
+                        )
+                    base_inp = cv2.cvtColor(base_lab_inp, cv2.COLOR_LAB2BGR)
+                    modified_img = np.clip(
+                        base_inp.astype(np.float32) + detail.astype(np.float32) - 128, 0, 255
+                    ).astype(np.uint8)
+                    logs.append(f"✨ Fallback OpenCV concluído (radius={inpaint_radius}).")
+
+                # SeamlessClone para emenda de tom invisível (ambos os caminhos)
                 ys, xs = np.where(mask_binary > 0)
                 if len(xs) > 0:
                     cx = int((int(xs.min()) + int(xs.max())) // 2)
@@ -136,9 +145,9 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
                         final_result = cv2.seamlessClone(
                             modified_img, img_main, mask_binary, (cx, cy), cv2.NORMAL_CLONE
                         )
-                        logs.append("🔗 seamlessClone aplicado: emenda de tom invisível.")
+                        logs.append("🔗 seamlessClone: emenda de tom invisível aplicada.")
                     except Exception as sc_err:
-                        logs.append(f"⚠️ seamlessClone falhou ({sc_err}), usando alpha blend.")
+                        logs.append(f"⚠️ seamlessClone falhou ({sc_err}), alpha blend.")
                         final_result = apply_face_mask(img_main, modified_img, user_mask)
                 else:
                     final_result = img_main.copy()
