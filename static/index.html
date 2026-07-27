@@ -80,8 +80,8 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     
     .result-container { position: absolute; inset: 0; background: #0b0f19; z-index: 40; display: none; flex-direction: column; padding: 20px; }
-    .result-img-wrapper { flex: 1; width: 100%; overflow: auto; position: relative; }
-    .result-img-wrapper img { display: block; border-radius: 8px; }
+    .result-img-wrapper { flex: 1; width: 100%; overflow: hidden; position: relative; cursor: grab; }
+    .result-img-wrapper img { display: block; position: absolute; top: 0; left: 0; transform-origin: 0 0; max-width: none; max-height: none; user-select: none; border-radius: 8px; }
     .result-actions { display: flex; gap: 12px; margin-top: 16px; z-index: 50; flex-shrink: 0; }
   </style>
 </head>
@@ -387,11 +387,10 @@
         }
 
         if (data.status === 'success' && data.image_url) {
-          document.getElementById('resultImage').src = data.image_url;
+          const ri = document.getElementById('resultImage');
+          ri.onload = () => centerImage();
+          ri.src = data.image_url + '?t=' + Date.now();
           document.getElementById('resultContainer').style.display = 'flex';
-          resultZoomScale = 1;
-          resultImg.style.width = '';
-          resultImg.style.height = '';
         } else {
           alert('Erro ao processar: ' + (data.message || 'Erro desconhecido'));
         }
@@ -401,65 +400,79 @@
       }
     }
 
-    // ZOOM E SCROLL no painel de resultado
-    // Scroll simples = vertical | Shift+Scroll = horizontal | Ctrl+Scroll = Zoom
-    let resultZoomScale = 1;
+    // ============================================================
+    // ZOOM + PAN no painel de resultado (sem scrollbar)
+    // Ctrl+Scroll = Zoom | Shift+Scroll = pan horizontal
+    // Scroll = pan vertical | Botao do meio = arrastar livre
+    // ============================================================
+    let imgScale = 1, imgOffsetX = 0, imgOffsetY = 0;
+    let isPanning = false, panSX = 0, panSY = 0, panSOX = 0, panSOY = 0;
     const zoomWrapperEl = document.getElementById('zoomWrapper');
     const resultImg = document.getElementById('resultImage');
 
-    function applyResultZoom(newScale, mouseX, mouseY) {
-      const wrapper = zoomWrapperEl;
-      const rect = wrapper.getBoundingClientRect();
-      const mouseXInContent = mouseX - rect.left + wrapper.scrollLeft;
-      const mouseYInContent = mouseY - rect.top + wrapper.scrollTop;
-      const ratioX = mouseXInContent / (resultImg.offsetWidth || 1);
-      const ratioY = mouseYInContent / (resultImg.offsetHeight || 1);
+    function applyZoomTransform() {
+      resultImg.style.transform = `translate(${imgOffsetX}px, ${imgOffsetY}px) scale(${imgScale})`;
+    }
 
-      resultZoomScale = Math.min(Math.max(newScale, 0.25), 6.0);
-      const naturalW = resultImg.naturalWidth || resultImg.offsetWidth;
-      resultImg.style.width = (naturalW * resultZoomScale) + 'px';
-      resultImg.style.height = 'auto';
-
-      wrapper.scrollLeft = ratioX * resultImg.offsetWidth - (mouseX - rect.left);
-      wrapper.scrollTop = ratioY * resultImg.offsetHeight - (mouseY - rect.top);
+    function centerImage() {
+      const wrapW = zoomWrapperEl.offsetWidth;
+      const wrapH = zoomWrapperEl.offsetHeight;
+      const imgW = resultImg.naturalWidth || resultImg.offsetWidth;
+      const imgH = resultImg.naturalHeight || resultImg.offsetHeight;
+      if (!imgW || !imgH) return;
+      imgScale = Math.min(wrapW / imgW, wrapH / imgH, 1);
+      imgOffsetX = (wrapW - imgW * imgScale) / 2;
+      imgOffsetY = (wrapH - imgH * imgScale) / 2;
+      applyZoomTransform();
     }
 
     if (zoomWrapperEl) {
       zoomWrapperEl.addEventListener('wheel', (e) => {
+        e.preventDefault();
         if (e.ctrlKey) {
-          e.preventDefault();
+          const rect = zoomWrapperEl.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const imgX = (mx - imgOffsetX) / imgScale;
+          const imgY = (my - imgOffsetY) / imgScale;
           const delta = e.deltaY > 0 ? -0.1 : 0.1;
-          applyResultZoom(resultZoomScale + delta * resultZoomScale, e.clientX, e.clientY);
+          imgScale = Math.min(Math.max(imgScale + delta * imgScale, 0.05), 15);
+          imgOffsetX = mx - imgX * imgScale;
+          imgOffsetY = my - imgY * imgScale;
         } else if (e.shiftKey) {
-          e.preventDefault();
-          zoomWrapperEl.scrollLeft += e.deltaY;
+          imgOffsetX -= e.deltaY * 0.8;
+        } else {
+          imgOffsetY -= e.deltaY * 0.8;
         }
+        applyZoomTransform();
       }, { passive: false });
+
+      zoomWrapperEl.addEventListener('mousedown', (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          isPanning = true;
+          panSX = e.clientX; panSY = e.clientY;
+          panSOX = imgOffsetX; panSOY = imgOffsetY;
+          zoomWrapperEl.style.cursor = 'grabbing';
+        }
+      });
     }
 
-    // Zoom no canvas principal
-    const canvasContainer = canvas.parentElement;
-    let canvasZoomScale = 1;
-    canvasContainer.style.overflow = 'auto';
-    canvas.style.transformOrigin = '0 0';
-    canvas.style.display = 'block';
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      imgOffsetX = panSOX + (e.clientX - panSX);
+      imgOffsetY = panSOY + (e.clientY - panSY);
+      applyZoomTransform();
+    });
 
-    canvasContainer.addEventListener('wheel', (e) => {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        canvasZoomScale = Math.min(Math.max(canvasZoomScale + delta * canvasZoomScale, 0.5), 6.0);
-        canvas.style.transform = `scale(${canvasZoomScale})`;
-      } else if (e.shiftKey) {
-        e.preventDefault();
-        canvasContainer.scrollLeft += e.deltaY;
+    window.addEventListener('mouseup', (e) => {
+      if (isPanning && e.button === 1) {
+        isPanning = false;
+        if (zoomWrapperEl) zoomWrapperEl.style.cursor = 'grab';
       }
-    }, { passive: false });
+    });
 
     function closeResultView() {
-      resultZoomScale = 1;
-      resultImg.style.width = '';
-      resultImg.style.height = '';
       document.getElementById('resultContainer').style.display = 'none';
     }
 

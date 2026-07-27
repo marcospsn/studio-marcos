@@ -101,7 +101,7 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
                 mask_dilated = cv2.dilate(mask_binary, kernel_dil, iterations=1)
 
                 # Decomposicao Base + Detalhe (Kimi AI)
-                base = cv2.bilateralFilter(img_main, d=9, sigmaColor=75, sigmaSpace=75)
+                base = cv2.bilateralFilter(img_main, d=9, sigmaColor=15, sigmaSpace=15)
                 # Detalhe = textura original intacta (poros, pelos, micro-relevo)
                 detail = cv2.addWeighted(img_main, 1.0, base, -1.0, 128)
 
@@ -125,10 +125,30 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
             final_result = apply_face_mask(img_main, modified_img, user_mask)
         else:
             final_result = modified_img
-    else:
+    # Sem mascara: se também não teve referência, aplica GFPGAN para restaurar skin grain e foco
+    if not (mask_img_path and os.path.exists(mask_img_path)) and (not ref_img_path or not os.path.exists(ref_img_path)):
+        logs.append("✨ Modo Restauração Automática: aprimorando skin grain, poros e definição via GFPGAN...")
+        try:
+            _, _, restored_auto = restorer.enhance(modified_img, has_aligned=False, only_center_face=False, paste_back=True)
+            if restored_auto is not None:
+                modified_img = restored_auto
+                logs.append("🎯 Skin grain e definição restaurados com sucesso.")
+        except Exception as e:
+            logs.append(f"⚠️ GFPGAN auto-restore falhou, mantendo original: {e}")
         final_result = modified_img
 
+    # UPSCALE UNIVERSAL PARA 4K (LANCZOS4)
+    h, w = final_result.shape[:2]
+    max_dim = max(w, h)
+    target_4k = 3840
+    if max_dim < target_4k:
+        scale_factor = target_4k / max_dim
+        new_w = int(w * scale_factor)
+        new_h = int(h * scale_factor)
+        final_result = cv2.resize(final_result, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+        logs.append(f"🔍 Upscale 4K aplicado: {new_w}×{new_h}px (Lanczos4 alta qualidade)")
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    cv2.imwrite(output_path, final_result)
-    logs.append("✅ Processamento concluído com sucesso em 4K HD!")
+    cv2.imwrite(output_path, final_result, [cv2.IMWRITE_JPEG_QUALITY, 98])
+    logs.append(f"✅ Concluído! Saída: {final_result.shape[1]}×{final_result.shape[0]}px")
     return output_path, logs
