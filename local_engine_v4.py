@@ -86,26 +86,29 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
             logs.append("🖌️ Máscara pintada detectada! Analisando área selecionada...")
 
             if not ref_img_path or not os.path.exists(ref_img_path):
-                logs.append("🧹 Modo Limpeza de Pele (Kimi AI v2): inpaint Base+Detalhe em 3 canais, bordas suaves...")
+                logs.append("🧹 Modo Limpeza de Pele v3: GaussianBase + seamlessClone para emenda invisível...")
 
                 # Mascara binaria corretamente redimensionada
                 mask_binary = (user_mask > 50).astype(np.uint8) * 255
                 if mask_binary.shape[:2] != img_main.shape[:2]:
                     mask_binary = cv2.resize(mask_binary, (img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
 
-                # Dilatar a mascara para puxar pixels saudaveis nas bordas (Kimi AI)
+                # Dilatar a mascara para puxar pixels saudaveis nas bordas
                 mask_area = np.sum(mask_binary > 0)
                 mask_radius = int(np.sqrt(mask_area / np.pi)) if mask_area > 0 else 10
                 inpaint_radius = min(max(int(mask_radius * 0.05), 5), 20)
                 kernel_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
                 mask_dilated = cv2.dilate(mask_binary, kernel_dil, iterations=1)
 
-                # Decomposicao Base + Detalhe (Kimi AI)
-                base = cv2.bilateralFilter(img_main, d=9, sigmaColor=15, sigmaSpace=15)
-                # Detalhe = textura original intacta (poros, pelos, micro-relevo)
+                # BASE: Gaussian puro com sigma grande (captura SO o gradiente de tom de larga escala)
+                # Nenhum pixel de textura/poro entra na base => detail layer fica com 100% do skin grain
+                h_img, w_img = img_main.shape[:2]
+                sigma_base = max(h_img, w_img) * 0.015   # ~1.5% da dimensao maxima
+                base = cv2.GaussianBlur(img_main, (0, 0), sigma_base)
+                # Detalhe = TUDO que nao e gradiente de cor => skin grain, poros, pelos, micro-relevo
                 detail = cv2.addWeighted(img_main, 1.0, base, -1.0, 128)
 
-                # Inpaint na BASE completa em espaco Lab (todos os 3 canais - Kimi AI)
+                # Inpaint na BASE em espaco Lab (todos os 3 canais para corrigir tom e cor da sarda)
                 base_lab = cv2.cvtColor(base, cv2.COLOR_BGR2LAB)
                 base_lab_inpainted = base_lab.copy()
                 for c in range(3):
@@ -114,15 +117,31 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
                     )
                 base_inpainted = cv2.cvtColor(base_lab_inpainted, cv2.COLOR_LAB2BGR)
 
-                # Recompor: base inpaintada + detalhe ORIGINAL (poros intactos)
+                # Recompor: base inpaintada + detalhe ORIGINAL (skin grain intacto)
                 modified_img = np.clip(
                     base_inpainted.astype(np.float32) + detail.astype(np.float32) - 128, 0, 255
                 ).astype(np.uint8)
-                logs.append(f"✨ Sardas removidas (inpaintRadius={inpaint_radius}). Poros e textura 100% preservados.")
+                logs.append(f"✨ Sardas removidas (radius={inpaint_radius}). Skin grain 100% preservado.")
 
+                # SEAMLESS CLONE: adapta o tom do resultado para igualar a pele vizinha
+                # Elimina completamente a emenda visivel de tom diferente
+                ys, xs = np.where(mask_binary > 0)
+                if len(xs) > 0:
+                    cx = int((int(xs.min()) + int(xs.max())) // 2)
+                    cy = int((int(ys.min()) + int(ys.max())) // 2)
+                    cx = max(1, min(cx, w_img - 2))
+                    cy = max(1, min(cy, h_img - 2))
+                    try:
+                        final_result = cv2.seamlessClone(
+                            modified_img, img_main, mask_binary, (cx, cy), cv2.NORMAL_CLONE
+                        )
+                        logs.append("🔗 seamlessClone aplicado: emenda de tom invisível.")
+                    except Exception as sc_err:
+                        logs.append(f"⚠️ seamlessClone falhou ({sc_err}), usando alpha blend.")
+                        final_result = apply_face_mask(img_main, modified_img, user_mask)
+                else:
+                    final_result = img_main.copy()
 
-            logs.append("✂️ Aplicando mesclagem cirúrgica: 100% dos pixels fora da máscara mantidos idênticos.")
-            final_result = apply_face_mask(img_main, modified_img, user_mask)
         else:
             final_result = modified_img
     # Sem mascara: se também não teve referência, aplica GFPGAN para restaurar skin grain e foco
