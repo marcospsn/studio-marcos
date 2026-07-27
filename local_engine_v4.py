@@ -84,33 +84,45 @@ def process_unified_v4(main_img_path, ref_img_path, output_path, mask_img_path=N
         user_mask = cv2.imread(mask_img_path, cv2.IMREAD_GRAYSCALE)
         if user_mask is not None and np.max(user_mask) > 50:
             logs.append("🖌️ Máscara pintada detectada! Analisando área selecionada...")
-            
-            # Sem referência: inpaint + seamlessClone para remover sardas/manchas com textura natural
+
             if not ref_img_path or not os.path.exists(ref_img_path):
-                logs.append("🧹 Modo Limpeza de Pele: removendo sardas/manchas e fundindo textura nas bordas (inpaint + seamless blend)...")
-                # Mascara binaria para o inpaint (pixeis a preencher)
+                logs.append("🧹 Modo Limpeza de Pele (Kimi AI): decomposição Base+Detalhe para preservar 100% dos poros...")
+
+                # Mascara binaria na escala correta
                 mask_binary = (user_mask > 50).astype(np.uint8) * 255
                 if mask_binary.shape[:2] != img_main.shape[:2]:
                     mask_binary = cv2.resize(mask_binary, (img_main.shape[1], img_main.shape[0]), interpolation=cv2.INTER_NEAREST)
-                # Inpainting: preenche a regiao mascarada usando pixels vizinhos (Telea algorithm)
-                inpainted = cv2.inpaint(img_main, mask_binary, inpaintRadius=7, flags=cv2.INPAINT_TELEA)
-                # Equaliza a textura de pele com bilateral filter na regiao inpaintada
-                inpainted_smooth = cv2.bilateralFilter(inpainted, d=9, sigmaColor=75, sigmaSpace=75)
-                # seamlessClone: funde a regiao suavizada com a imagem original preservando bordas e iluminacao
-                mask_for_clone = mask_binary.copy()
-                # Centro da mascara para o seamlessClone
-                ys, xs = np.where(mask_for_clone > 0)
-                if len(xs) > 0 and len(ys) > 0:
-                    cx = int((xs.min() + xs.max()) / 2)
-                    cy = int((ys.min() + ys.max()) / 2)
-                    try:
-                        modified_img = cv2.seamlessClone(inpainted_smooth, img_main, mask_for_clone, (cx, cy), cv2.NORMAL_CLONE)
-                        logs.append("✨ Textura de pele preservada e sardas removidas com fusão natural nas bordas.")
-                    except Exception:
-                        modified_img = inpainted_smooth
-                        logs.append("✨ Sardas removidas com inpaint (fallback sem seamlessClone).")
-                else:
-                    modified_img = inpainted_smooth
+
+                # Decomposicao Base + Detalhe no espaco Lab (Kimi AI)
+                img_float = img_main.astype(np.float32) / 255.0
+                lab = cv2.cvtColor(img_float, cv2.COLOR_BGR2Lab)
+                L, a_ch, b_ch = cv2.split(lab)
+
+                # Base (baixa frequencia = cor/luminosidade onde estao as sardas)
+                L_norm = L / 100.0
+                base_L = cv2.bilateralFilter(L_norm.astype(np.float32), d=9, sigmaColor=0.05, sigmaSpace=9)
+                # Detalhe (alta frequencia = POROS e TEXTURA - preservado intacto)
+                detail_L = L_norm - base_L
+
+                # Inpaint SOMENTE na base usando pixels vizinhos saudaveis
+                base_L_uint8 = np.clip(base_L * 255, 0, 255).astype(np.uint8)
+                base_inpainted = cv2.inpaint(base_L_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) / 255.0
+
+                # Inpaint canais de cor a,b para corrigir o tom marrom/vermelho das sardas
+                a_uint8 = np.clip(a_ch + 128, 0, 255).astype(np.uint8)
+                b_uint8 = np.clip(b_ch + 128, 0, 255).astype(np.uint8)
+                a_inpainted = cv2.inpaint(a_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) - 128
+                b_inpainted = cv2.inpaint(b_uint8, mask_binary, inpaintRadius=5, flags=cv2.INPAINT_TELEA).astype(np.float32) - 128
+
+                # Recombinar: nova base (sem sardas) + detalhe ORIGINAL (poros intactos)
+                new_L_norm = np.clip(base_inpainted + detail_L, 0, 1)
+                new_L = (new_L_norm * 100.0).astype(np.float32)
+
+                new_lab = cv2.merge([new_L, a_inpainted, b_inpainted])
+                result_float = cv2.cvtColor(new_lab, cv2.COLOR_Lab2BGR)
+                modified_img = np.clip(result_float * 255, 0, 255).astype(np.uint8)
+                logs.append("✨ Textura de pele e poros preservados 100%. Sardas removidas somente na camada de cor/luminosidade.")
+
 
             logs.append("✂️ Aplicando mesclagem cirúrgica: 100% dos pixels fora da máscara mantidos idênticos.")
             final_result = apply_face_mask(img_main, modified_img, user_mask)

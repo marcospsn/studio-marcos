@@ -1,0 +1,14 @@
+{
+  "saved_preset": "Marcos_Perfect_Baseline_v1",
+  "date": "2026-07-24",
+  "status": "APPROVED_BASELINE",
+  "description": "Configuração calibrada do Nano Banana Pro que atingiu a maior fidelidade real do Marcos",
+  "model_version": "google/nano-banana-pro:93f55bfdbdfd4a62e16bf861729bcfa9e8fd9b0325fb218cbc4dd138ecc87cc7",
+  "reference_image": "G:/Meu Drive/Imagens/Exemplos de Marcos/Marcos 01 leve sorriso.png",
+  "parameters": {
+    "aspect_ratio": "1:1",
+    "output_format": "png"
+  },
+  "exact_prompt": "A full-body high-resolution professional studio portrait of the man from the reference image (Marcos, a handsome 35yo man). He is sitting relaxed on an elegant leather armchair in a modern executive office, smiling naturally. SKIN AND FACE SPECIFICATIONS: Perfectly spotless, smooth, clean olive skin complexion without any freckles. ZERO FRECKLES. COMPLETELY FRECKLE-FREE FACE. ZERO SUN SPOTS. ZERO SPOTS. AGE AND WRINKLE ADJUSTMENT: Youthful smooth skin for a 35yo man with very soft, subtle, minimal expression lines around the eyes. REDUCE EYE WRINKLES AND FOREHEAD LINES BY 60%. Soften deep facial creases to look youthful, fresh, and energetic while keeping natural micro-pores. Keep 100% exact facial identity, excellent dense beard, realistic teeth, styled hair, and natural chest hair from the reference photo. Hyper-realistic 8k photography, 35mm lens, natural studio lighting.",
+  "result_url": "https://replicate.delivery/xezq/1tWfX9xLiOzuYyukE2LIhDLPFBo23iXNwZhxMwlrpeDZKZ8WA/tmparir__98.png"
+}
